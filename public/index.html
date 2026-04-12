@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Audit Dashboard VC-Max</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chroma-js@2.1.0/chroma.min.js"></script>
+<style>
+body{font-family:'Inter',sans-serif;background:#F8F8F8;margin:0;padding:0;color:#222;}
+h1{font-family:'Montserrat',sans-serif;color:#2596BE;margin:20px;}
+nav{display:flex;gap:10px;padding:15px;background:linear-gradient(90deg,#2596BE,#AA1CF6);}
+nav button{padding:8px 15px;border:none;border-radius:12px;color:#fff;background:rgba(255,255,255,0.2);cursor:pointer;transition:0.3s;}
+nav button.active{background:#fff;color:#2596BE;}
+.metrics{display:flex;gap:15px;margin:20px;flex-wrap:wrap;}
+.metric{flex:1 1 150px;background:#fff;border-radius:16px;padding:20px;text-align:center;box-shadow:0 6px 18px rgba(0,0,0,0.08);transition:0.3s;}
+.metric:hover{transform:scale(1.03);}
+.badge{display:inline-block;margin:5px;padding:6px 12px;border-radius:12px;color:#fff;font-weight:600;transition:0.3s;}
+.badge.good{background:#2ECC71;}
+.badge.warn{background:#F1C40F;}
+.badge.critical{background:#E74C3C;}
+section{display:none;padding:20px;}
+section.active{display:block;}
+canvas{background:#fff;border-radius:12px;padding:15px;box-shadow:0 8px 24px rgba(0,0,0,0.08);margin-bottom:15px;}
+.sparkline{height:50px;width:100%;}
+#exportBtn,#exportCSV{margin:10px;padding:10px 20px;border:none;border-radius:12px;background:#2596BE;color:#fff;cursor:pointer;}
+</style>
+</head>
+<body>
+<h1>Audit Dashboard VC-Max</h1>
+<nav>
+<button class="tab-btn active" data-tab="overview">Overview</button>
+<button class="tab-btn" data-tab="growth">Growth</button>
+<button class="tab-btn" data-tab="investor">Investor KPIs</button>
+</nav>
+
+<section id="overview" class="active">
+<div class="metrics">
+  <div class="metric"><h2 id="users">0</h2><canvas id="usersSpark" class="sparkline"></canvas><p>Users</p></div>
+  <div class="metric"><h2 id="revenue">0</h2><canvas id="revenueSpark" class="sparkline"></canvas><p>Revenue</p></div>
+  <div class="metric"><h2 id="churn">0</h2><canvas id="churnSpark" class="sparkline"></canvas><p>Churn</p></div>
+  <div class="metric"><h2 id="errors">0</h2><canvas id="errorsSpark" class="sparkline"></canvas><p>Errors</p></div>
+</div>
+<div id="badges"></div>
+<button id="exportBtn">Export PDF</button>
+<button id="exportCSV">Export CSV</button>
+</section>
+
+<section id="growth">
+<canvas id="growthChart" width="400" height="150"></canvas>
+</section>
+
+<section id="investor">
+<canvas id="kpiChart" width="400" height="150"></canvas>
+</section>
+
+<script>
+// Tabs
+const tabs=document.querySelectorAll('.tab-btn');
+const sections=document.querySelectorAll('section');
+tabs.forEach(t=>t.addEventListener('click',()=>{tabs.forEach(b=>b.classList.remove('active'));t.classList.add('active');sections.forEach(s=>s.classList.remove('active'));document.getElementById(t.dataset.tab).classList.add('active');}));
+
+// Metrics + events log
+const metrics={users:0,revenue:0,churn:0,errors:0};
+const badgesEl=document.getElementById('badges');
+let eventsLog=[];
+
+// Gradient helper
+function gradientColor(data){ 
+  const min=Math.min(...data); const max=Math.max(...data);
+  return data.map(v=>chroma.scale(['#2ECC71','#F1C40F','#E74C3C'])( (v-min)/(max-min||1) ).hex());
+}
+function updateSpark(chart,value){
+  chart.data.labels.push(new Date().toLocaleTimeString());
+  chart.data.datasets[0].data.push(value);
+  const colors=gradientColor(chart.data.datasets[0].data);
+  chart.data.datasets[0].borderColor=colors[colors.length-1];
+  if(chart.data.labels.length>20){chart.data.labels.shift();chart.data.datasets[0].data.shift();}
+  chart.update();
+}
+
+// Sparklines
+const usersSpark=new Chart(document.getElementById('usersSpark').getContext('2d'),{type:'line',data:{labels:[],datasets:[{data:[],borderColor:'#2ECC71',fill:false,tension:0.4,pointRadius:0}]} ,options:{responsive:true,plugins:{legend:{display:false}}}});
+const revenueSpark=new Chart(document.getElementById('revenueSpark').getContext('2d'),{type:'line',data:{labels:[],datasets:[{data:[],borderColor:'#AA1CF6',fill:false,tension:0.4,pointRadius:0}]} ,options:{responsive:true,plugins:{legend:{display:false}}}});
+const churnSpark=new Chart(document.getElementById('churnSpark').getContext('2d'),{type:'line',data:{labels:[],datasets:[{data:[],borderColor:'#F1C40F',fill:false,tension:0.4,pointRadius:0}]} ,options:{responsive:true,plugins:{legend:{display:false}}}});
+const errorsSpark=new Chart(document.getElementById('errorsSpark').getContext('2d'),{type:'line',data:{labels:[],datasets:[{data:[],borderColor:'#E74C3C',fill:false,tension:0.4,pointRadius:0}]} ,options:{responsive:true,plugins:{legend:{display:false}}}});
+
+// Growth + KPI charts
+const growthChart=new Chart(document.getElementById('growthChart').getContext('2d'),{type:'line',data:{labels:[],datasets:[{label:'Users',data:[],borderColor:'#2596BE',backgroundColor:'rgba(37,150,190,0.2)',tension:0.4},{label:'Revenue',data:[],borderColor:'#AA1CF6',backgroundColor:'rgba(170,28,246,0.2)',tension:0.4}]},options:{responsive:true}});
+const kpiChart=new Chart(document.getElementById('kpiChart').getContext('2d'),{type:'line',data:{labels:[],datasets:[{label:'MRR',data:[],borderColor:'#2ECC71',tension:0.3},{label:'ARR',data:[],borderColor:'#F1C40F',tension:0.3},{label:'LTV',data:[],borderColor:'#E74C3C',tension:0.3}]},options:{responsive:true}});
+
+// WebSocket live feed
+const ws=new WebSocket('ws://localhost:3000');
+ws.onmessage=(msg)=>{
+  const ev=JSON.parse(msg.data);
+
+  metrics.users += ev.newUsers;
+  metrics.revenue += ev.newRevenue;
+  metrics.churn = ev.churn;
+  metrics.errors += ev.newErrors;
+
+  // Update DOM
+  document.getElementById('users').textContent=metrics.users;
+  document.getElementById('revenue').textContent=metrics.revenue;
+  document.getElementById('churn').textContent=metrics.churn;
+  document.getElementById('errors').textContent=metrics.errors;
+
+  // Badges
+  const badge=document.createElement('div'); badge.className='badge '+ev.type; badge.textContent=`Event ${ev.type} (+${ev.newUsers+ev.newRevenue})`; badgesEl.prepend(badge);
+
+  // Sparklines
+  updateSpark(usersSpark,metrics.users);
+  updateSpark(revenueSpark,metrics.revenue);
+  updateSpark(churnSpark,metrics.churn);
+  updateSpark(errorsSpark,metrics.errors);
+
+  // Growth chart
+  const time=ev.time;
+  growthChart.data.labels.push(time);
+  growthChart.data.datasets[0].data.push(metrics.users);
+  growthChart.data.datasets[1].data.push(metrics.revenue);
+  if(growthChart.data.labels.length>20){growthChart.data.labels.shift();growthChart.data.datasets[0].data.shift();growthChart.data.datasets[1].data.shift();}
+  growthChart.update();
+
+  // KPI chart
+  kpiChart.data.labels.push(time);
+  kpiChart.data.datasets[0].data.push(metrics.revenue*0.8);
+  kpiChart.data.datasets[1].data.push(metrics.revenue*12);
+  kpiChart.data.datasets[2].data.push(metrics.revenue*1.5);
+  if(kpiChart.data.labels.length>20){kpiChart.data.labels.shift();kpiChart.data.datasets[0].data.shift();kpiChart.data.datasets[1].data.shift();kpiChart.data.datasets[2].data.shift();}
+  kpiChart.update();
+
+  eventsLog.push(ev);
+};
+
+// Export PDF
+document.getElementById('exportBtn').addEventListener('click',()=>{
+  const { jsPDF }=window.jspdf; const doc=new jsPDF();
+  doc.text('Audit Dashboard Snapshot',10,10);
+  doc.text(`Users: ${metrics.users}`,10,20); doc.text(`Revenue: ${metrics.revenue}`,10,30);
+  doc.text(`Churn: ${metrics.churn}`,10,40); doc.text(`Errors: ${metrics.errors}`,10,50);
+  doc.save('dashboard_snapshot.pdf');
+});
+
+// Export CSV
+document.getElementById('exportCSV').addEventListener('click',()=>{
+  let csv="time,type,newUsers,newRevenue,churn,newErrors\n";
+  eventsLog.forEach(ev=>{csv+=`${ev.time},${ev.type},${ev.newUsers},${ev.newRevenue},${ev.churn},${ev.newErrors}\n`;});
+  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}); saveAs(blob,"dashboard_events.csv");
+});
+</script>
+</body>
+</html>
