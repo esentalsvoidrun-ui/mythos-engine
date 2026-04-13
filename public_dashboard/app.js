@@ -1,10 +1,13 @@
 let token = localStorage.getItem("token") || "";
 
 function setStatus(text) {
-  document.getElementById("authStatus").textContent = text;
+  const el = document.getElementById("authStatus");
+  if (el) el.textContent = text;
 }
 
 async function registerUser() {
+  setStatus("Registering...");
+
   const email = document.getElementById("email").value;
   const password = document.getElementById("password").value;
 
@@ -12,7 +15,7 @@ async function registerUser() {
     const res = await fetch("/api/register", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({ email, password })
     });
@@ -25,11 +28,14 @@ async function registerUser() {
 
     setStatus("Registered. Now log in.");
   } catch (err) {
+    console.error("REGISTER ERROR:", err);
     setStatus("Register error: " + err.message);
   }
 }
 
 async function loginUser() {
+  setStatus("Logging in...");
+
   const email = document.getElementById("email").value;
   const password = document.getElementById("password").value;
 
@@ -37,7 +43,7 @@ async function loginUser() {
     const res = await fetch("/api/login", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({ email, password })
     });
@@ -51,8 +57,9 @@ async function loginUser() {
     token = data.token;
     localStorage.setItem("token", token);
     setStatus("Logged in");
-    loadInsights();
+    await loadInsights();
   } catch (err) {
+    console.error("LOGIN ERROR:", err);
     setStatus("Login error: " + err.message);
   }
 }
@@ -63,17 +70,19 @@ async function loadInsights() {
   const actionEl = document.getElementById("action");
   const humanLayerEl = document.getElementById("humanLayer");
 
+  if (!token) {
+    insightEl.textContent = "Login required";
+    riskEl.textContent = "-";
+    actionEl.textContent = "Please register or log in.";
+    humanLayerEl.textContent = "-";
+    return;
+  }
+
   insightEl.textContent = "Loading...";
   riskEl.textContent = "-";
   actionEl.textContent = "-";
   humanLayerEl.textContent = "-";
   riskEl.className = "";
-
-  if (!token) {
-    insightEl.textContent = "Login required";
-    actionEl.textContent = "Please register or log in.";
-    return;
-  }
 
   try {
     const res = await fetch("/api/insights", {
@@ -83,12 +92,12 @@ async function loadInsights() {
         "Authorization": token
       },
       body: JSON.stringify({
-  revenue: Number(document.getElementById("revenue").value),
-  previousRevenue: Number(document.getElementById("prevRevenue").value),
-  churn: Number(document.getElementById("churn").value),
-  previousChurn: Number(document.getElementById("prevChurn").value),
-  users: 1000
-})
+        revenue: Number(document.getElementById("revenue")?.value || 120000),
+        previousRevenue: Number(document.getElementById("prevRevenue")?.value || 100000),
+        churn: Number(document.getElementById("churn")?.value || 5),
+        previousChurn: Number(document.getElementById("prevChurn")?.value || 2),
+        users: 1000
+      })
     });
 
     const data = await res.json();
@@ -106,6 +115,7 @@ async function loadInsights() {
     if (data.risk === "MEDIUM") riskEl.className = "risk-medium";
     if (data.risk === "HIGH") riskEl.className = "risk-high";
   } catch (err) {
+    console.error("INSIGHTS ERROR:", err);
     insightEl.textContent = "Failed to load AI insights";
     riskEl.textContent = "ERROR";
     actionEl.textContent = err.message;
@@ -113,9 +123,15 @@ async function loadInsights() {
   }
 }
 
-if (token) {
-  setStatus("Logged in");
-  loadInsights();
-} else {
-  setStatus("Not logged in");
-}
+window.registerUser = registerUser;
+window.loginUser = loginUser;
+window.loadInsights = loadInsights;
+
+document.addEventListener("DOMContentLoaded", () => {
+  if (token) {
+    setStatus("Logged in");
+    loadInsights();
+  } else {
+    setStatus("Not logged in");
+  }
+});
