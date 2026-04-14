@@ -5,7 +5,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { getInsights } from "./insights.js";
 import { register, login, verify } from "./auth.js";
-import fs from "fs";
+import { initDb, getDb } from "./db.js";
 
 dotenv.config();
 
@@ -32,7 +32,6 @@ function authMiddleware(req, res, next) {
   }
 }
 
-// --- AUTH ROUTES ---
 app.post("/api/register", async (req, res) => {
   try {
     const user = await register(req.body.email, req.body.password);
@@ -51,21 +50,59 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
-// --- SAVE DATA ---
-app.post("/api/metrics", authMiddleware, (req, res) => {
-  const metrics = JSON.parse(fs.readFileSync("./data/metrics.json"));
-  metrics.push({ userId: req.user.id, ...req.body });
-  fs.writeFileSync("./data/metrics.json", JSON.stringify(metrics, null, 2));
-  res.json({ success: true });
-});
-
-// --- INSIGHTS ---
 app.post("/api/insights", authMiddleware, async (req, res) => {
   try {
     const result = await getInsights(req.body);
+    const db = getDb();
+
+    await db.run(
+      `INSERT INTO insights_history (
+        user_id, revenue, previous_revenue, churn, previous_churn, users_count,
+        insight, why_it_matters, action, risk, revenue_growth, churn_delta, human_layer
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        req.user.id,
+        Number(req.body.revenue),
+        Number(req.body.previousRevenue),
+        Number(req.body.churn),
+        Number(req.body.previousChurn),
+        Number(req.body.users || 0),
+        result.insight,
+        result.whyItMatters,
+        result.action,
+        result.risk,
+        result.revenueGrowth,
+        result.churnDelta,
+        result.humanLayer,
+      ]
+    );
+
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: "Insight engine failed" });
+    console.error("INSIGHTS ERROR:", err);
+    res.status(500).json({ error: "Insight engine failed", details: err.message });
+  }
+});
+
+app.get("/api/history", authMiddleware, async (req, res) => {
+  try {
+    const db = getDb();
+
+    const rows = await db.all(
+      `SELECT id, revenue, previous_revenue, churn, previous_churn,
+              insight, why_it_matters, action, risk, revenue_growth,
+              churn_delta, human_layer, created_at
+       FROM insights_history
+       WHERE user_id = ?
+       ORDER BY created_at DESC
+       LIMIT 20`,
+      [req.user.id]
+    );
+
+    res.json(rows);
+  } catch (err) {
+    console.error("HISTORY ERROR:", err);
+    res.status(500).json({ error: "Failed to load history" });
   }
 });
 
@@ -74,6 +111,14 @@ app.get("/", (req, res) => {
 });
 
 const PORT = process.env.PORT || 3002;
-app.listen(PORT, () => {
-  console.log(`AI Product running on port ${PORT}`);
-});
+
+initDb()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`AI Product running on port ${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error("DB INIT ERROR:", err);
+    process.exit(1);
+  });

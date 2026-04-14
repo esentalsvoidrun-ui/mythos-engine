@@ -5,6 +5,46 @@ function setStatus(text) {
   if (el) el.textContent = text;
 }
 
+function renderHistory(items) {
+  const box = document.getElementById("history");
+  if (!box) return;
+
+  if (!items || items.length === 0) {
+    box.innerHTML = "<p>No history yet.</p>";
+    return;
+  }
+
+  box.innerHTML = items.map(item => `
+    <div class="history-item">
+      <div><strong>${item.risk}</strong> — ${item.insight}</div>
+      <div style="opacity:.8;font-size:14px;">${item.action}</div>
+      <div style="opacity:.65;font-size:12px;">${item.created_at}</div>
+    </div>
+  `).join("");
+}
+
+async function loadHistory() {
+  if (!token) return;
+
+  try {
+    const res = await fetch("/api/history", {
+      headers: {
+        "Authorization": token
+      }
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || "Failed to load history");
+    }
+
+    renderHistory(data);
+  } catch (err) {
+    console.error("HISTORY ERROR:", err);
+  }
+}
+
 async function registerUser() {
   setStatus("Registering...");
 
@@ -14,21 +54,16 @@ async function registerUser() {
   try {
     const res = await fetch("/api/register", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password })
     });
 
     const data = await res.json();
 
-    if (!res.ok) {
-      throw new Error(data.error || "Register failed");
-    }
+    if (!res.ok) throw new Error(data.error || "Register failed");
 
     setStatus("Registered. Now log in.");
   } catch (err) {
-    console.error("REGISTER ERROR:", err);
     setStatus("Register error: " + err.message);
   }
 }
@@ -42,24 +77,20 @@ async function loginUser() {
   try {
     const res = await fetch("/api/login", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password })
     });
 
     const data = await res.json();
 
-    if (!res.ok) {
-      throw new Error(data.error || "Login failed");
-    }
+    if (!res.ok) throw new Error(data.error || "Login failed");
 
     token = data.token;
     localStorage.setItem("token", token);
     setStatus("Logged in");
     await loadInsights();
+    await loadHistory();
   } catch (err) {
-    console.error("LOGIN ERROR:", err);
     setStatus("Login error: " + err.message);
   }
 }
@@ -69,6 +100,7 @@ async function loadInsights() {
   const riskEl = document.getElementById("risk");
   const actionEl = document.getElementById("action");
   const humanLayerEl = document.getElementById("humanLayer");
+  const btn = document.getElementById("analyzeBtn");
 
   if (!token) {
     insightEl.textContent = "Login required";
@@ -78,6 +110,7 @@ async function loadInsights() {
     return;
   }
 
+  btn.textContent = "Analyzing...";
   insightEl.textContent = "Loading...";
   riskEl.textContent = "-";
   actionEl.textContent = "-";
@@ -92,19 +125,17 @@ async function loadInsights() {
         "Authorization": token
       },
       body: JSON.stringify({
-        revenue: Number(document.getElementById("revenue")?.value || 120000),
-        previousRevenue: Number(document.getElementById("prevRevenue")?.value || 100000),
-        churn: Number(document.getElementById("churn")?.value || 5),
-        previousChurn: Number(document.getElementById("prevChurn")?.value || 2),
+        revenue: Number(document.getElementById("revenue").value),
+        previousRevenue: Number(document.getElementById("prevRevenue").value),
+        churn: Number(document.getElementById("churn").value),
+        previousChurn: Number(document.getElementById("prevChurn").value),
         users: 1000
       })
     });
 
     const data = await res.json();
 
-    if (!res.ok) {
-      throw new Error(data.error || "Failed to load insights");
-    }
+    if (!res.ok) throw new Error(data.error || "Failed to load insights");
 
     insightEl.textContent = data.insight || "No insight";
     riskEl.textContent = data.risk || "No risk";
@@ -114,12 +145,15 @@ async function loadInsights() {
     if (data.risk === "LOW") riskEl.className = "risk-low";
     if (data.risk === "MEDIUM") riskEl.className = "risk-medium";
     if (data.risk === "HIGH") riskEl.className = "risk-high";
+
+    await loadHistory();
   } catch (err) {
-    console.error("INSIGHTS ERROR:", err);
     insightEl.textContent = "Failed to load AI insights";
     riskEl.textContent = "ERROR";
     actionEl.textContent = err.message;
     humanLayerEl.textContent = "Kontrollen tappades, men inte bygget.";
+  } finally {
+    btn.textContent = "Analyze";
   }
 }
 
@@ -127,10 +161,11 @@ window.registerUser = registerUser;
 window.loginUser = loginUser;
 window.loadInsights = loadInsights;
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   if (token) {
     setStatus("Logged in");
-    loadInsights();
+    await loadInsights();
+    await loadHistory();
   } else {
     setStatus("Not logged in");
   }

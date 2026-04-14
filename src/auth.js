@@ -1,41 +1,42 @@
-import fs from "fs";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { getDb } from "./db.js";
 
-const USERS_FILE = "./data/users.json";
 const SECRET = process.env.JWT_SECRET;
 
 if (!SECRET) {
   throw new Error("JWT_SECRET is missing");
 }
 
-function readUsers() {
-  return JSON.parse(fs.readFileSync(USERS_FILE, "utf8"));
-}
-
-function writeUsers(users) {
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
-}
-
 export async function register(email, password) {
-  const users = readUsers();
+  const db = getDb();
 
-  if (users.find(u => u.email === email)) {
+  const existing = await db.get(
+    "SELECT id, email FROM users WHERE email = ?",
+    [email]
+  );
+
+  if (existing) {
     throw new Error("User already exists");
   }
 
   const hash = await bcrypt.hash(password, 10);
-  const user = { id: Date.now(), email, password: hash };
 
-  users.push(user);
-  writeUsers(users);
+  const result = await db.run(
+    "INSERT INTO users (email, password) VALUES (?, ?)",
+    [email, hash]
+  );
 
-  return { id: user.id, email: user.email };
+  return { id: result.lastID, email };
 }
 
 export async function login(email, password) {
-  const users = readUsers();
-  const user = users.find(u => u.email === email);
+  const db = getDb();
+
+  const user = await db.get(
+    "SELECT id, email, password FROM users WHERE email = ?",
+    [email]
+  );
 
   if (!user) throw new Error("User not found");
 

@@ -10,38 +10,26 @@
       font-family: Arial, sans-serif;
       background: #0f172a;
       color: #e2e8f0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
       min-height: 100vh;
+      padding: 32px;
+      box-sizing: border-box;
     }
-
+    .wrap {
+      display: grid;
+      grid-template-columns: 1fr 1.2fr;
+      gap: 24px;
+      align-items: start;
+    }
     .card {
       background: #1e293b;
       border: 1px solid #334155;
       border-radius: 16px;
       padding: 24px;
-      width: 90%;
-      max-width: 700px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
     }
-
-    h1 {
-      margin-top: 0;
-      font-size: 28px;
-      margin-bottom: 20px;
-    }
-
-    .row {
-      margin-bottom: 14px;
-      line-height: 1.5;
-    }
-
-    .label {
-      font-weight: bold;
-      color: #93c5fd;
-    }
-
+    h1,h2 { margin-top: 0; }
+    .row { margin-bottom: 14px; line-height: 1.5; }
+    .label { font-weight: bold; color: #93c5fd; }
     .human {
       margin-top: 22px;
       padding-top: 16px;
@@ -49,11 +37,9 @@
       font-style: italic;
       color: #cbd5e1;
     }
-
     .risk-low { color: #4ade80; font-weight: bold; }
     .risk-medium { color: #facc15; font-weight: bold; }
     .risk-high { color: #f87171; font-weight: bold; }
-
     input {
       width: 100%;
       padding: 12px;
@@ -64,7 +50,6 @@
       color: white;
       box-sizing: border-box;
     }
-
     button {
       padding: 12px 16px;
       border: none;
@@ -74,57 +59,63 @@
       cursor: pointer;
       margin-right: 10px;
     }
-
-    button:hover {
-      opacity: 0.9;
-    }
-
     #authBox {
       margin-bottom: 24px;
       padding-bottom: 18px;
       border-bottom: 1px solid #334155;
     }
+    .history-item {
+      padding: 12px 0;
+      border-bottom: 1px solid #334155;
+    }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>AI Insights</h1>
+  <div class="wrap">
+    <div class="card">
+      <h1>AI Insights</h1>
 
-    <div id="authBox">
-      <input type="email" id="email" placeholder="Email" value="test@test.com" />
-      <input type="password" id="password" placeholder="Password" value="1234" />
-      <button onclick="registerUser()">Register</button>
-      <button onclick="loginUser()">Login</button>
-      <p id="authStatus">Not logged in</p>
+      <div id="authBox">
+        <input type="email" id="email" placeholder="Email" value="test@test.com" />
+        <input type="password" id="password" placeholder="Password" value="1234" />
+        <button onclick="registerUser()">Register</button>
+        <button onclick="loginUser()">Login</button>
+        <p id="authStatus">Not logged in</p>
+      </div>
+
+      <div class="row">
+        <span class="label">Insight:</span>
+        <span id="insight">Login required</span>
+      </div>
+
+      <div class="row">
+        <span class="label">Risk:</span>
+        <span id="risk">-</span>
+      </div>
+
+      <div class="row">
+        <span class="label">Action:</span>
+        <span id="action">-</span>
+      </div>
+
+      <div class="human" id="humanLayer">-</div>
     </div>
 
-    <div class="row">
-      <span class="label">Insight:</span>
-      <span id="insight">Login required</span>
-    </div>
+    <div class="card">
+      <h2>Analyze Metrics</h2>
+      <input id="revenue" placeholder="Revenue" value="120000" />
+      <input id="prevRevenue" placeholder="Previous Revenue" value="100000" />
+      <input id="churn" placeholder="Churn" value="5" />
+      <input id="prevChurn" placeholder="Previous Churn" value="2" />
+      <button id="analyzeBtn" onclick="loadInsights()">Analyze</button>
 
-    <div class="row">
-      <span class="label">Risk:</span>
-      <span id="risk">-</span>
+      <h2 style="margin-top:28px;">History</h2>
+      <div id="history">
+        <p>No history yet.</p>
+      </div>
     </div>
-
-    <div class="row">
-      <span class="label">Action:</span>
-      <span id="action">-</span>
-    </div>
-
-    <div class="human" id="humanLayer">-</div>
   </div>
 
   <script src="app.js"></script>
 </body>
 </html>
-
-<div style="margin-top:20px;">
-  <input id="revenue" placeholder="Revenue" value="120000"/>
-  <input id="prevRevenue" placeholder="Previous Revenue" value="100000"/>
-  <input id="churn" placeholder="Churn" value="5"/>
-  <input id="prevChurn" placeholder="Previous Churn" value="2"/>
-  <button onclick="loadInsights()">Analyze</button>
-</div>
-
