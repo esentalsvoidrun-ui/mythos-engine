@@ -392,32 +392,32 @@
     <section class="grid-6">
       <div class="stat">
         <div class="label">Status</div>
-        <div class="value" id="statusValue">—</div>
+        <div id="statusValue"></div>
         <div class="sub" id="statusSub">Awaiting data</div>
       </div>
       <div class="stat">
         <div class="label">Drift</div>
-        <div class="value" id="driftValue">0.00</div>
+        <div id="driftValue"></div>
         <div class="sub">Identity drift</div>
       </div>
       <div class="stat">
         <div class="label">Baseline risk</div>
-        <div class="value" id="baselineRiskValue">0</div>
+        <div id="baselineRiskValue"></div>
         <div class="sub">System baseline</div>
       </div>
       <div class="stat">
         <div class="label">Events loaded</div>
-        <div class="value" id="eventsLoadedValue">0</div>
+        <div id="eventsLoadedValue"></div>
         <div class="sub">Recent live events</div>
       </div>
       <div class="stat">
         <div class="label">Avg risk</div>
-        <div class="value" id="avgRiskValue">0</div>
+        <div id="avgRiskValue"></div>
         <div class="sub">Recent average</div>
       </div>
       <div class="stat">
         <div class="label">Top action</div>
-        <div class="value" id="topActionValue">log</div>
+        <div id="topActionValue"></div>
         <div class="sub">Most common action</div>
       </div>
     </section>
@@ -458,7 +458,7 @@
             <div class="mini">
               <div class="label">Decision reasoning</div>
               <ul id="reasonList">
-                <li>No comparison data yet.</li>
+          <div id="decisionReasoning">No comparison data yet</div>
               </ul>
             </div>
 
@@ -490,7 +490,7 @@
           <div class="panel-title">System reflection</div>
         </div>
         <div class="panel-body">
-          <div class="console" id="systemReflection">Waiting for /api/summary ...</div>
+          <div id="systemReflection"></div>
         </div>
       </div>
     </section>
