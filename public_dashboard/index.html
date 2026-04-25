@@ -1,14 +1,344 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="base:app_id" content="69ec26248502c283edbf943c" />
-  <meta name="base.app_id" content="69ec26248502c283edbf943c" />
-  <title>SignalDesk</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SignalDesk — AI Decision Engine</title>
+  <link rel="stylesheet" href="./style.css" />
+  <style>
+    :root {
+      --bg: #080b12;
+      --panel: #111827;
+      --panel2: #0f172a;
+      --border: rgba(255,255,255,.09);
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --green: #22c55e;
+      --yellow: #facc15;
+      --red: #ef4444;
+      --blue: #38bdf8;
+      --purple: #a855f7;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at top left, rgba(56,189,248,.12), transparent 32%),
+        radial-gradient(circle at top right, rgba(168,85,247,.12), transparent 30%),
+        var(--bg);
+      color: var(--text);
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .shell {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 18px;
+      margin-bottom: 22px;
+    }
+
+    .eyebrow {
+      color: var(--blue);
+      font-size: 13px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 38px;
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      max-width: 760px;
+      margin-top: 10px;
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .status-pill {
+      border: 1px solid var(--border);
+      background: rgba(15,23,42,.72);
+      padding: 10px 14px;
+      border-radius: 999px;
+      color: var(--muted);
+      white-space: nowrap;
+      font-size: 13px;
+    }
+
+    .status-pill strong {
+      color: var(--green);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.1fr .9fr;
+      gap: 18px;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .card {
+      background: linear-gradient(180deg, rgba(17,24,39,.92), rgba(15,23,42,.92));
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 18px;
+      box-shadow: 0 20px 50px rgba(0,0,0,.24);
+    }
+
+    .metric-label {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+
+    .metric-value {
+      font-size: 30px;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+    }
+
+    .metric-sub {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 8px;
+    }
+
+    .section-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .section-title h2 {
+      font-size: 17px;
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+
+    .tag {
+      font-size: 12px;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      padding: 6px 9px;
+      border-radius: 999px;
+    }
+
+    .feed, .list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 430px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .item {
+      border: 1px solid var(--border);
+      background: rgba(2,6,23,.42);
+      border-radius: 16px;
+      padding: 13px;
+    }
+
+    .item-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .item-title {
+      font-weight: 750;
+      text-transform: capitalize;
+    }
+
+    .item-meta {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .decision {
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      font-size: 12px;
+    }
+
+    .decision.block, .severity.critical { color: var(--red); }
+    .decision.manual_review, .severity.high { color: var(--yellow); }
+    .decision.rate_limit, .severity.medium { color: var(--blue); }
+    .decision.log, .severity.low { color: var(--green); }
+
+    .reasons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .reason {
+      font-size: 11px;
+      color: #cbd5e1;
+      background: rgba(148,163,184,.09);
+      border: 1px solid rgba(148,163,184,.14);
+      border-radius: 999px;
+      padding: 5px 8px;
+    }
+
+    .summary-box {
+      color: #dbeafe;
+      line-height: 1.6;
+      font-size: 14px;
+      min-height: 118px;
+    }
+
+    .recommendation {
+      margin-top: 14px;
+      padding: 13px;
+      border-radius: 16px;
+      border: 1px solid rgba(56,189,248,.22);
+      background: rgba(56,189,248,.08);
+      color: #bae6fd;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .empty {
+      color: var(--muted);
+      font-size: 14px;
+      padding: 16px;
+      border: 1px dashed var(--border);
+      border-radius: 16px;
+    }
+
+    .footer-note {
+      margin-top: 20px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 1050px) {
+      .grid, .metrics { grid-template-columns: 1fr; }
+      .topbar { flex-direction: column; }
+    }
+  </style>
 </head>
-<body style="margin:0;background:#071226;color:#eaf1ff;font-family:Arial,sans-serif;padding:40px;">
-  <h1>SignalDesk</h1>
-  <p>The decision layer for onchain payments.</p>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">SignalDesk · AI Decision Engine</div>
+        <h1>Real-time decision intelligence for risk events.</h1>
+        <p class="subtitle">
+          This is not a dashboard. It is a decision layer. It does not just show risk —
+          it recommends action, explains why, and keeps an audit trail over time.
+        </p>
+      </div>
+      <div class="status-pill">
+        Engine: <strong id="connectionStatus">checking...</strong>
+      </div>
+    </header>
+
+    <section class="metrics">
+      <div class="card">
+        <div class="metric-label">Risk Score</div>
+        <div class="metric-value" id="riskScore">—</div>
+        <div class="metric-sub" id="riskStatus">Awaiting signal</div>
+      </div>
+
+      <div class="card">
+        <div class="metric-label">Incidents</div>
+        <div class="metric-value" id="incidentCount">0</div>
+        <div class="metric-sub">Detected events</div>
+      </div>
+
+      <div class="card">
+        <div class="metric-label">Actions</div>
+        <div class="metric-value" id="actionCount">0</div>
+        <div class="metric-sub">Recommended decisions</div>
+      </div>
+
+      <div class="card">
+        <div class="metric-label">System Drift</div>
+        <div class="metric-value" id="driftScore">—</div>
+        <div class="metric-sub" id="driftStatus">Monitoring baseline</div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <div class="section-title">
+          <h2>Live Decision Feed</h2>
+          <span class="tag">latest signals</span>
+        </div>
+        <div class="feed" id="liveFeed">
+          <div class="empty">No live decisions yet. Send a test event to wake the engine.</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">
+          <h2>AI Summary</h2>
+          <span class="tag">operator view</span>
+        </div>
+        <div class="summary-box" id="aiSummary">
+          Loading current system summary...
+        </div>
+        <div class="recommendation" id="recommendation">
+          Recommendation will appear here once events are available.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">
+          <h2>Incidents</h2>
+          <span class="tag">audit evidence</span>
+        </div>
+        <div class="list" id="incidentList">
+          <div class="empty">No incidents found.</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">
+          <h2>Actions</h2>
+          <span class="tag">decision trail</span>
+        </div>
+        <div class="list" id="actionList">
+          <div class="empty">No actions found.</div>
+        </div>
+      </div>
+    </section>
+
+    <p class="footer-note">
+      SignalDesk currently runs with synthetic and API-fed risk events. External connectors such as Stripe,
+      Base, Binance, and OpenTelemetry can be added as input sources. The core value is source-agnostic:
+      real-time decision intelligence.
+    </p>
+  </main>
+
+  <script src="./app.js"></script>
 </body>
 </html>

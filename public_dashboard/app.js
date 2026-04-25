@@ -1,402 +1,216 @@
-(() => {
-  const REFRESH_MS = 3000;
-  const API_BASE = "";
+const API_BASE = window.location.origin;
+const WS_URL = API_BASE.replace(/^http/, "ws");
 
-  const ACTION_PRIORITY = {
-    block: 4,
-    manual_review: 3,
-    rate_limit: 2,
-    observe: 1,
-    log: 0
+const state = {
+  incidents: [],
+  actions: [],
+  feed: []
+};
+
+const $ = (id) => document.getElementById(id);
+
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function formatTime(value) {
+  if (!value) return "now";
+  try {
+    return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  } catch {
+    return "now";
+  }
+}
+
+function getRiskScore(items = []) {
+  const scores = items
+    .map(x => Number(x.riskScore ?? x.risk ?? 0))
+    .filter(x => Number.isFinite(x));
+
+  if (!scores.length) return null;
+
+  return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+}
+
+function riskLabel(score) {
+  if (score === null || score === undefined) return "Awaiting signal";
+  if (score >= 90) return "Critical risk";
+  if (score >= 72) return "High risk";
+  if (score >= 45) return "Medium risk";
+  return "Stable";
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function reasonCodesHtml(item) {
+  const codes = safeArray(item.reasonCodes || item.reasons || item.reason_codes);
+  if (!codes.length) return `<div class="reasons"><span class="reason">NO_REASON_CODES</span></div>`;
+
+  return `
+    <div class="reasons">
+      ${codes.slice(0, 8).map(code => `<span class="reason">${escapeHtml(code)}</span>`).join("")}
+    </div>
+  `;
+}
+
+function itemHtml(item, mode = "incident") {
+  const type = item.type || item.eventType || "signal";
+  const user = item.user || item.userId || item.actor || "unknown-user";
+  const risk = item.riskScore ?? item.risk ?? "—";
+  const action = item.action || item.decision || item.recommendedAction || "log";
+  const severity = item.severity || "low";
+  const createdAt = item.createdAt || item.timestamp || item.time;
+
+  return `
+    <div class="item">
+      <div class="item-head">
+        <div>
+          <div class="item-title">${escapeHtml(type)} · ${escapeHtml(user)}</div>
+          <div class="item-meta">
+            risk ${escapeHtml(risk)} · 
+            <span class="severity ${escapeHtml(severity)}">${escapeHtml(severity)}</span> ·
+            ${escapeHtml(formatTime(createdAt))}
+          </div>
+        </div>
+        <div class="decision ${escapeHtml(action)}">${escapeHtml(action)}</div>
+      </div>
+      ${reasonCodesHtml(item)}
+    </div>
+  `;
+}
+
+function renderList(id, items, emptyText, mode) {
+  const el = $(id);
+  const list = safeArray(items).slice(0, 12);
+
+  if (!list.length) {
+    el.innerHTML = `<div class="empty">${emptyText}</div>`;
+    return;
+  }
+
+  el.innerHTML = list.map(item => itemHtml(item, mode)).join("");
+}
+
+function pushFeed(item) {
+  if (!item) return;
+
+  const normalized = {
+    ...item,
+    createdAt: item.createdAt || item.timestamp || new Date().toISOString()
   };
 
-  const el = {
-    statusValue: document.getElementById("statusValue"),
-    statusSub: document.getElementById("statusSub"),
-    driftValue: document.getElementById("driftValue"),
-    driftSub: document.getElementById("driftSub"),
-    baselineRiskValue: document.getElementById("baselineRiskValue"),
-    baselineRiskSub: document.getElementById("baselineRiskSub"),
-    eventsLoadedValue: document.getElementById("eventsLoadedValue"),
-    eventsLoadedSub: document.getElementById("eventsLoadedSub"),
-    avgRiskValue: document.getElementById("avgRiskValue"),
-    avgRiskSub: document.getElementById("avgRiskSub"),
-    topActionValue: document.getElementById("topActionValue"),
-    topActionSub: document.getElementById("topActionSub"),
+  state.feed.unshift(normalized);
+  state.feed = state.feed.slice(0, 20);
+  renderList("liveFeed", state.feed, "No live decisions yet.", "feed");
+}
 
-    currentDecisionValue: document.getElementById("currentDecisionValue"),
-    currentDecisionSub: document.getElementById("currentDecisionSub"),
-    signalDeskValue: document.getElementById("signalDeskValue"),
-    signalDeskSub: document.getElementById("signalDeskSub"),
-    mqcSuggestionValue: document.getElementById("mqcSuggestionValue"),
-    mqcSuggestionSub: document.getElementById("mqcSuggestionSub"),
-    nextBestActionValue: document.getElementById("nextBestActionValue"),
-    nextBestActionSub: document.getElementById("nextBestActionSub"),
+function renderMetrics(summary = {}) {
+  const risk = getRiskScore(state.incidents);
+  $("riskScore").textContent = risk === null ? "—" : risk;
+  $("riskStatus").textContent = riskLabel(risk);
 
-    decisionReasoning: document.getElementById("decisionReasoning"),
-    memoryFactors: document.getElementById("memoryFactors"),
-    runtimeNotes: document.getElementById("runtimeNotes"),
-    divergenceExplanation: document.getElementById("divergenceExplanation"),
-    systemReflection: document.getElementById("systemReflection"),
+  $("incidentCount").textContent = state.incidents.length;
+  $("actionCount").textContent = state.actions.length;
 
-    incidentList: document.getElementById("incidentList"),
-    decisionFeed: document.getElementById("decisionFeed"),
-    mqcInsightFeed: document.getElementById("mqcInsightFeed"),
+  const drift = summary?.drift || {};
+  $("driftScore").textContent = drift.driftScore !== undefined ? Number(drift.driftScore).toFixed(2) : "—";
+  $("driftStatus").textContent = drift.status ? `Status: ${drift.status}` : "Monitoring baseline";
+}
 
-    bucketLowBar: document.getElementById("bucketLowBar"),
-    bucketLowCount: document.getElementById("bucketLowCount"),
-    bucketMediumBar: document.getElementById("bucketMediumBar"),
-    bucketMediumCount: document.getElementById("bucketMediumCount"),
-    bucketHighBar: document.getElementById("bucketHighBar"),
-    bucketHighCount: document.getElementById("bucketHighCount"),
-    bucketCriticalBar: document.getElementById("bucketCriticalBar"),
-    bucketCriticalCount: document.getElementById("bucketCriticalCount"),
+function renderSummary(data = {}) {
+  $("aiSummary").textContent =
+    data.summary ||
+    "System is waiting for enough events to generate a useful operator summary.";
 
-    connectionStatus: document.getElementById("connectionStatus"),
-    authStatus: document.getElementById("authStatus")
-  };
+  $("recommendation").textContent =
+    data.recommendation ||
+    "Recommended action: keep monitoring until a stronger signal pattern appears.";
+}
 
-  function setText(node, value) {
-    if (node) node.textContent = value;
+async function fetchJson(path) {
+  const res = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`${path} returned ${res.status}`);
+  return res.json();
+}
+
+async function loadDashboard() {
+  try {
+    const [incidents, actions, summary] = await Promise.all([
+      fetchJson("/api/incidents").catch(() => []),
+      fetchJson("/api/actions").catch(() => []),
+      fetchJson("/api/summary").catch(() => ({}))
+    ]);
+
+    state.incidents = safeArray(incidents);
+    state.actions = safeArray(actions);
+
+    renderList("incidentList", state.incidents, "No incidents found.", "incident");
+    renderList("actionList", state.actions, "No actions found.", "action");
+
+    const combined = [...state.incidents, ...state.actions]
+      .sort((a, b) => new Date(b.createdAt || b.timestamp || 0) - new Date(a.createdAt || a.timestamp || 0))
+      .slice(0, 12);
+
+    state.feed = combined;
+    renderList("liveFeed", state.feed, "No live decisions yet. Send a test event to wake the engine.", "feed");
+
+    renderSummary(summary);
+    renderMetrics(summary);
+
+    $("connectionStatus").textContent = "online";
+  } catch (err) {
+    $("connectionStatus").textContent = "offline";
+    $("aiSummary").textContent = `Dashboard could not load API data: ${err.message}`;
   }
+}
 
-  function setHTML(node, value) {
-    if (node) node.innerHTML = value;
+function connectWs() {
+  try {
+    const ws = new WebSocket(WS_URL);
+
+    ws.onopen = () => {
+      $("connectionStatus").textContent = "online · live";
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        const payload =
+          data.incident ||
+          data.action ||
+          data.event ||
+          data.payload ||
+          data;
+
+        pushFeed(payload);
+
+        setTimeout(loadDashboard, 350);
+      } catch {
+        // Ignore malformed websocket packets.
+      }
+    };
+
+    ws.onclose = () => {
+      $("connectionStatus").textContent = "polling";
+      setTimeout(connectWs, 2500);
+    };
+
+    ws.onerror = () => {
+      $("connectionStatus").textContent = "polling";
+    };
+  } catch {
+    $("connectionStatus").textContent = "polling";
   }
+}
 
-  function esc(value) {
-    return String(value ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;");
-  }
-
-  function niceAction(action) {
-    return String(action || "observe").replaceAll("_", " ");
-  }
-
-  function upperAction(action) {
-    return niceAction(action).toUpperCase();
-  }
-
-  function formatTime(value) {
-    if (!value) return "n/a";
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return "n/a";
-    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  }
-
-  function formatScore(value) {
-    const n = Number(value);
-    return Number.isFinite(n) ? String(Math.round(n)) : "n/a";
-  }
-
-  function severityClass(severity, score) {
-    const s = String(severity || "").toLowerCase();
-    if (s === "critical") return "critical";
-    if (s === "high") return "high";
-    if (s === "medium") return "medium";
-    if (s === "low") return "low";
-
-    const n = Number(score);
-    if (!Number.isFinite(n)) return "low";
-    if (n >= 90) return "critical";
-    if (n >= 72) return "high";
-    if (n >= 45) return "medium";
-    return "low";
-  }
-
-  async function getJSON(path) {
-    const res = await fetch(`${API_BASE}${path}`, {
-      headers: { Accept: "application/json" },
-      cache: "no-store"
-    });
-    if (!res.ok) {
-      throw new Error(`${path} -> HTTP ${res.status}`);
-    }
-    return res.json();
-  }
-
-  function normalizeIncidents(raw) {
-    const list = Array.isArray(raw) ? raw : [];
-    return list
-      .map((item) => {
-        const riskScore = Number.isFinite(Number(item?.riskScore))
-          ? Number(item.riskScore)
-          : (Number.isFinite(Number(item?.risk)) ? Number(item.risk) : null);
-
-        const createdAtTs = new Date(item?.createdAt || 0).getTime() || 0;
-
-        return {
-          ...item,
-          riskScore,
-          createdAtTs
-        };
-      })
-      .sort((a, b) => b.createdAtTs - a.createdAtTs);
-  }
-
-  function computeAvgRisk(incidents) {
-    const scored = incidents.filter((i) => Number.isFinite(i.riskScore));
-    if (!scored.length) return 0;
-    const sum = scored.reduce((acc, item) => acc + item.riskScore, 0);
-    return Math.round(sum / scored.length);
-  }
-
-  function computeTopAction(incidents) {
-    const actions = incidents.slice(0, 20).map((i) => i?.action).filter(Boolean);
-    if (!actions.length) return "observe";
-    return actions.sort((a, b) => (ACTION_PRIORITY[b] || 0) - (ACTION_PRIORITY[a] || 0))[0] || "observe";
-  }
-
-  function computeBuckets(incidents) {
-    const buckets = { low: 0, medium: 0, high: 0, critical: 0 };
-
-    for (const item of incidents) {
-      const score = Number(item?.riskScore);
-      if (!Number.isFinite(score)) continue;
-
-      if (score <= 44) buckets.low++;
-      else if (score <= 71) buckets.medium++;
-      else if (score <= 89) buckets.high++;
-      else buckets.critical++;
-    }
-
-    return buckets;
-  }
-
-  function renderReasonCodes(item) {
-    const codes = Array.isArray(item?.reasonCodes) ? item.reasonCodes : [];
-    if (!codes.length) {
-      return `<ul class="clean"><li>No explicit reason codes.</li></ul>`;
-    }
-    return `<ul class="clean">${codes.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>`;
-  }
-
-  function renderMemoryFactors(item) {
-    const codes = Array.isArray(item?.reasonCodes) ? item.reasonCodes : [];
-    const memoryCodes = codes.filter((c) => String(c).startsWith("MEMORY_"));
-
-    if (!memoryCodes.length) {
-      return `
-        <div>No memory factors triggered</div>
-        <div style="margin-top:8px;opacity:.8;">Latest user: ${esc(item?.user || "unknown")}</div>
-      `;
-    }
-
-    return `
-      <div>${memoryCodes.slice(0, 4).map(esc).join(", ")}</div>
-      <div style="margin-top:8px;opacity:.8;">Latest user: ${esc(item?.user || "unknown")}</div>
-    `;
-  }
-
-  function renderRuntimeNotes(item) {
-    if (!item) return `Awaiting live incident.`;
-
-    return `
-      <div>Latest event type: <b>${esc(item?.type || "unknown")}</b></div>
-      <div>Severity: <b>${esc(item?.severity || "unknown")}</b></div>
-      <div>Status: <b>${esc(item?.status || "issued")}</b></div>
-      <div>Time: <b>${esc(formatTime(item?.createdAt))}</b></div>
-    `;
-  }
-
-  function renderDivergence(summary) {
-    const enabled = Boolean(summary?.mqc?.enabled);
-
-    if (!enabled) {
-      return `
-        <div class="strong" style="color:#93c5fd;">Aligned</div>
-        <div style="margin-top:6px;">No shadow comparison yet.</div>
-        <div style="margin-top:8px;">SignalDesk is driving the decision stream from the incident engine in this build.</div>
-      `;
-    }
-
-    return `
-      <div class="strong" style="color:#93c5fd;">Comparison active</div>
-      <div style="margin-top:6px;">MQC comparison stream available.</div>
-    `;
-  }
-
-  function renderReflection(summary, latestIncident, avgRisk, incidents) {
-    const driftStatus = summary?.drift?.status || "unknown";
-    const driftScore = Number.isFinite(Number(summary?.drift?.driftScore))
-      ? Number(summary.drift.driftScore).toFixed(2)
-      : "n/a";
-    const engineMode = summary?.mqc?.enabled ? (summary?.mqc?.mode || "comparison") : "signaldesk";
-    const currentVolume = incidents.length;
-    const latestDecisionTime = formatTime(latestIncident?.createdAt);
-
-    return `System status: ${driftStatus}. Drift score: ${driftScore}. Engine mode: ${engineMode}. Current avg risk: ${avgRisk}. Current volume: ${currentVolume}. Latest decision time: ${latestDecisionTime}.`;
-  }
-
-  function renderIncidentCards(incidents) {
-    if (!incidents.length) {
-      return `<div class="empty-state">No live incidents yet.</div>`;
-    }
-
-    return incidents.slice(0, 12).map((item) => `
-      <div class="card ${severityClass(item?.severity, item?.riskScore)}">
-        <div class="row">
-          <div>
-            <div class="strong">${esc(item?.type || "event")} • ${esc(item?.user || "unknown")}</div>
-            <div>severity: <b>${esc(item?.severity || "unknown")}</b> • action: <b>${esc(item?.action || "observe")}</b></div>
-          </div>
-          <div class="muted">${esc(formatTime(item?.createdAt))}</div>
-        </div>
-        <div style="margin-top:6px;word-break:break-word;">
-          ${Array.isArray(item?.reasonCodes) && item.reasonCodes.length
-            ? esc(item.reasonCodes.join(", "))
-            : "No explicit reason codes."}
-        </div>
-      </div>
-    `).join("");
-  }
-
-  function renderDecisionFeed(incidents) {
-    if (!incidents.length) {
-      return `<div class="empty-state">Awaiting decision stream.</div>`;
-    }
-
-    return incidents.slice(0, 6).map((item) => `
-      <div class="card low">
-        <div class="row">
-          <div class="strong">${esc(upperAction(item?.action))}</div>
-          <div class="muted">${esc(item?.user || "unknown")} • ${esc(niceAction(item?.action))} • ${esc(formatTime(item?.createdAt))}</div>
-        </div>
-        <div style="margin-top:4px;">user: ${esc(item?.user || "unknown")}</div>
-        <div>score: ${esc(formatScore(item?.riskScore))} • status: ${esc(item?.status || "issued")}</div>
-        <div style="margin-top:4px;">${esc(item?.summary || "Narrative pending")}</div>
-      </div>
-    `).join("");
-  }
-
-  function renderMQCFeed(incidents, summary) {
-    const latest = incidents[0];
-
-    if (!summary?.mqc?.enabled) {
-      return `
-        <div class="card low">
-          <div class="row">
-            <div class="strong">${esc(latest?.action || "observe")} • ${esc(latest?.user || "unknown")}</div>
-            <div class="muted">${esc(formatTime(latest?.createdAt))}</div>
-          </div>
-          <div style="margin-top:4px;">Action: <b>observe</b></div>
-          <div>Reasons: MQC disabled in this build</div>
-        </div>
-      `;
-    }
-
-    return `
-      <div class="card low">
-        <div>MQC comparison stream active.</div>
-      </div>
-    `;
-  }
-
-  function updateRiskBars(buckets) {
-    const total = Object.values(buckets).reduce((a, b) => a + b, 0) || 1;
-
-    setText(el.bucketLowCount, String(buckets.low));
-    setText(el.bucketMediumCount, String(buckets.medium));
-    setText(el.bucketHighCount, String(buckets.high));
-    setText(el.bucketCriticalCount, String(buckets.critical));
-
-    if (el.bucketLowBar) el.bucketLowBar.style.width = `${(buckets.low / total) * 100}%`;
-    if (el.bucketMediumBar) el.bucketMediumBar.style.width = `${(buckets.medium / total) * 100}%`;
-    if (el.bucketHighBar) el.bucketHighBar.style.width = `${(buckets.high / total) * 100}%`;
-    if (el.bucketCriticalBar) el.bucketCriticalBar.style.width = `${(buckets.critical / total) * 100}%`;
-  }
-
-  async function refresh() {
-    try {
-      setText(el.connectionStatus, "connecting...");
-      setText(el.authStatus, "live");
-
-      const [rawIncidents, rawActions, summary] = await Promise.all([
-        getJSON("/api/incidents"),
-        getJSON("/api/actions").catch(() => []),
-        getJSON("/api/summary")
-      ]);
-
-      const incidents = normalizeIncidents(rawIncidents);
-      const latestIncident = incidents[0] || null;
-      const avgRisk = computeAvgRisk(incidents);
-      const topAction = computeTopAction(incidents);
-      const buckets = computeBuckets(incidents);
-
-      setText(el.statusValue, String(summary?.drift?.status || "unknown"));
-      setText(el.statusSub, "Adaptive recalibration required");
-
-      setText(
-        el.driftValue,
-        Number.isFinite(Number(summary?.drift?.driftScore))
-          ? Number(summary.drift.driftScore).toFixed(2)
-          : "0.00"
-      );
-      setText(el.driftSub, "Identity drift");
-
-      setText(el.baselineRiskValue, String(summary?.identity?.baselineRisk ?? summary?.drift?.baselineRisk ?? 0));
-      setText(el.baselineRiskSub, "System baseline");
-
-      setText(el.eventsLoadedValue, String(incidents.length));
-      setText(el.eventsLoadedSub, "Recent live events");
-
-      setText(el.avgRiskValue, String(avgRisk));
-      setText(el.avgRiskSub, "Recent average");
-
-      setText(el.topActionValue, niceAction(topAction));
-      setText(el.topActionSub, "Strongest recent action");
-
-      setText(el.currentDecisionValue, upperAction(latestIncident?.action || "observe"));
-      setText(
-        el.currentDecisionSub,
-        latestIncident?.riskScore != null
-          ? `Score — ${formatScore(latestIncident.riskScore)}`
-          : "Score — n/a"
-      );
-
-      setText(el.signalDeskValue, "Active");
-      setText(el.signalDeskSub, "SignalDesk weighted rule engine");
-
-      setText(el.mqcSuggestionValue, summary?.mqc?.enabled ? "Active" : "Inactive");
-      setText(
-        el.mqcSuggestionSub,
-        summary?.mqc?.enabled ? "Comparison stream available" : "MQC disabled in this build"
-      );
-
-      setText(el.nextBestActionValue, niceAction(latestIncident?.action || topAction || "observe"));
-      setText(el.nextBestActionSub, latestIncident ? "Derived from latest incident" : "Await next signal");
-
-      setHTML(el.decisionReasoning, renderReasonCodes(latestIncident));
-      setHTML(el.memoryFactors, renderMemoryFactors(latestIncident));
-      setHTML(el.runtimeNotes, renderRuntimeNotes(latestIncident));
-      setHTML(el.divergenceExplanation, renderDivergence(summary));
-      setText(el.systemReflection, renderReflection(summary, latestIncident, avgRisk, incidents));
-
-      setHTML(el.incidentList, renderIncidentCards(incidents));
-      setHTML(el.decisionFeed, renderDecisionFeed(incidents));
-      setHTML(el.mqcInsightFeed, renderMQCFeed(incidents, summary));
-
-      updateRiskBars(buckets);
-
-      setText(el.connectionStatus, "connected");
-    } catch (err) {
-      console.error("[SignalDesk UI] refresh failed:", err);
-      setText(el.connectionStatus, "offline");
-      setText(el.authStatus, "error");
-      setText(el.systemReflection, `Dashboard refresh failed: ${err.message}`);
-    }
-  }
-
-  function boot() {
-    refresh();
-    setInterval(refresh, REFRESH_MS);
-  }
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", boot);
-  } else {
-    boot();
-  }
-})();
+loadDashboard();
+connectWs();
+setInterval(loadDashboard, 5000);
